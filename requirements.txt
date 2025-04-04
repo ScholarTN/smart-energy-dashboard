@@ -1,0 +1,11 @@
+dash
+dash-bootstrap-components
+flask
+flask-socketio
+pandas
+plotly
+openai
+pymongo
+google-generativeai
+reportlab
+gunicorn
