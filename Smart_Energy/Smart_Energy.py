@@ -17,10 +17,10 @@ from reportlab.pdfgen import canvas
 # ✅ Initialize Gemini AI
 genai.configure(api_key="AIzaSyDJBErHnC-7WPAqXfBdr8cjebynAMm08SA")
 
-# ✅ MongoDB Connection
-client = MongoClient("mongodb://localhost:27017/")
-db = client["energydb"]
-collection = db["sensorData"]
+client = MongoClient("mongodb+srv://Scholar:Scholar101!@cluster0.rub78kd.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
+db = client["energydb"]  # Ensure this matches your database name
+collection = db["sensorData"]  # Ensure this matches your collection name
+
 
 # ✅ Fetch Data from MongoDB
 def fetch_data(start_date=None, end_date=None):
