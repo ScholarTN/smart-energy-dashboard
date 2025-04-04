@@ -26,19 +26,22 @@ collection = db["sensorData"]
 def fetch_data(start_date=None, end_date=None):
     query = {}
     if start_date and end_date:
-        start_str = pd.to_datetime(start_date).isoformat()
-        end_str = pd.to_datetime(end_date).isoformat()
-        query = {"payload.timestamp": {"$gte": start_str, "$lte": end_str}}
+        start_str = pd.to_datetime(start_date)
+        end_str = pd.to_datetime(end_date)
+        query = {"payload.timestamp": {"$gte": start_str.isoformat(), "$lte": end_str.isoformat()}}
 
     data = list(collection.find(query).sort("payload.timestamp", -1).limit(1000))
+    if not data:
+        return pd.DataFrame()
+
     df = pd.json_normalize(data)
 
-    if not df.empty:
-        df["timestamp"] = pd.to_datetime(df["payload.timestamp"])
-        df["energy_consumption_kWh"] = df["payload.energy_consumption_kWh"].astype(float)
-        df["voltage"] = df["payload.voltage"].astype(float)
-        df["cost"] = df["energy_consumption_kWh"] * 0.12  # Assume $0.12 per kWh
-        df["anomaly"] = df["energy_consumption_kWh"] > (df["energy_consumption_kWh"].mean() + 2 * df["energy_consumption_kWh"].std())
+    df["timestamp"] = pd.to_datetime(df["payload.timestamp"])
+    df["energy_consumption_kWh"] = pd.to_numeric(df["payload.energy_consumption_kWh"], errors='coerce')
+    df["voltage"] = pd.to_numeric(df["payload.voltage"], errors='coerce')
+    df = df.dropna(subset=["timestamp", "energy_consumption_kWh", "voltage"])
+    df["cost"] = df["energy_consumption_kWh"] * 0.12
+    df["anomaly"] = df["energy_consumption_kWh"] > (df["energy_consumption_kWh"].mean() + 2 * df["energy_consumption_kWh"].std())
 
     return df
 
@@ -96,7 +99,7 @@ def update_graph(n, start_date, end_date):
     df = fetch_data(start_date, end_date)
 
     if df.empty:
-        return go.Figure(), "No Data Available"
+        return go.Figure(), "⚠️ No Data Available"
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df["timestamp"], y=df["energy_consumption_kWh"], mode="lines", name="Energy (kWh)", line=dict(color="blue")))
@@ -141,6 +144,8 @@ def get_ai_response(n_clicks, user_input):
 )
 def download_csv(n_clicks):
     df = fetch_data()
+    if df.empty:
+        return dcc.send_data_frame(pd.DataFrame().to_csv, "empty.csv")
     return dcc.send_data_frame(df.to_csv, "energy_data.csv")
 
 # ✅ Callback for PDF download
@@ -154,9 +159,12 @@ def download_pdf(n_clicks):
     buffer = io.BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=letter)
     pdf.drawString(100, 750, "Smart Energy Consumption Report")
-    pdf.drawString(100, 730, f"Total Energy: {df['energy_consumption_kWh'].sum():.2f} kWh")
-    pdf.drawString(100, 710, f"Peak Usage: {df['timestamp'][df['energy_consumption_kWh'].idxmax()]}")
-    pdf.drawString(100, 690, f"Estimated Cost: Rs{df['cost'].sum():.2f}")
+    if not df.empty:
+        pdf.drawString(100, 730, f"Total Energy: {df['energy_consumption_kWh'].sum():.2f} kWh")
+        pdf.drawString(100, 710, f"Peak Usage: {df['timestamp'][df['energy_consumption_kWh'].idxmax()]}")
+        pdf.drawString(100, 690, f"Estimated Cost: Rs{df['cost'].sum():.2f}")
+    else:
+        pdf.drawString(100, 730, "No data available.")
     pdf.showPage()
     pdf.save()
     buffer.seek(0)
