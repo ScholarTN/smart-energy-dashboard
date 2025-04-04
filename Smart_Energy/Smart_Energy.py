@@ -159,4 +159,11 @@ def download_pdf(n_clicks):
     pdf.drawString(100, 690, f"Estimated Cost: Rs{df['cost'].sum():.2f}")
     pdf.showPage()
     pdf.save()
-    buffer.seek
+    buffer.seek(0)
+    return dcc.send_bytes(buffer.getvalue(), "energy_report.pdf")
+
+# ✅ Gunicorn server requirement for deployment
+server = app.server
+
+if __name__ == "__main__":
+    app.run(debug=False, port=8025, host="0.0.0.0")
