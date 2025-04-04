@@ -18,8 +18,7 @@ from reportlab.pdfgen import canvas
 genai.configure(api_key="AIzaSyDJBErHnC-7WPAqXfBdr8cjebynAMm08SA")
 
 # ✅ MongoDB Atlas Connection
-ATLAS_URI = "mongodb+srv://Scholar:Scholar101!@cluster0.rub78kd.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
-client = MongoClient(ATLAS_URI)
+client = MongoClient("mongodb+srv://Scholar:Scholar101!@cluster0.rub78kd.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
 db = client["energydb"]
 collection = db["sensorData"]
 
@@ -32,26 +31,15 @@ def fetch_data(start_date=None, end_date=None):
         query = {"payload.timestamp": {"$gte": start_str, "$lte": end_str}}
 
     data = list(collection.find(query).sort("payload.timestamp", -1).limit(1000))
+    df = pd.json_normalize(data)
 
-    if not data:
-        return pd.DataFrame()  # Return empty DataFrame if no data
+    if not df.empty:
+        df["timestamp"] = pd.to_datetime(df["payload.timestamp"])
+        df["energy_consumption_kWh"] = df["payload.energy_consumption_kWh"].astype(float)
+        df["voltage"] = df["payload.voltage"].astype(float)
+        df["cost"] = df["energy_consumption_kWh"] * 0.12  # Assume $0.12 per kWh
+        df["anomaly"] = df["energy_consumption_kWh"] > (df["energy_consumption_kWh"].mean() + 2 * df["energy_consumption_kWh"].std())
 
-    df = pd.json_normalize(data)  # Flattens nested JSON structure
-
-    # Fix timestamp parsing
-    df["timestamp"] = pd.to_datetime(df["payload.timestamp"])
-
-    # Convert numeric fields correctly
-    df["energy_consumption_kWh"] = df["payload.energy_consumption_kWh"].astype(float)
-    df["voltage"] = df["payload.voltage"].astype(float)
-
-    # Calculate cost (assuming $0.12 per kWh)
-    df["cost"] = df["energy_consumption_kWh"] * 0.12
-
-    # Detect anomalies
-    df["anomaly"] = df["energy_consumption_kWh"] > (df["energy_consumption_kWh"].mean() + 2 * df["energy_consumption_kWh"].std())
-
-    print(df.head())  # Debugging: Print sample data
     return df
 
 # ✅ Flask app for real-time updates
@@ -167,14 +155,8 @@ def download_pdf(n_clicks):
     pdf = canvas.Canvas(buffer, pagesize=letter)
     pdf.drawString(100, 750, "Smart Energy Consumption Report")
     pdf.drawString(100, 730, f"Total Energy: {df['energy_consumption_kWh'].sum():.2f} kWh")
-    pdf.drawString(100, 710, f"Estimated Cost: Rs{df['cost'].sum():.2f}")
+    pdf.drawString(100, 710, f"Peak Usage: {df['timestamp'][df['energy_consumption_kWh'].idxmax()]}")
+    pdf.drawString(100, 690, f"Estimated Cost: Rs{df['cost'].sum():.2f}")
     pdf.showPage()
     pdf.save()
-    buffer.seek(0)
-    return dcc.send_bytes(buffer.getvalue(), "energy_report.pdf")
-
-# ✅ Gunicorn server requirement for deployment
-server = app.server
-
-if __name__ == "__main__":
-    app.run(debug=False, port=8025, host="0.0.0.0")
+    buffer.seek
