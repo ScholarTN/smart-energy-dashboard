@@ -26,7 +26,9 @@ collection = db["sensorData"]
 def fetch_data(start_date=None, end_date=None):
     query = {}
     if start_date and end_date:
-        query = {"payload.timestamp": {"$gte": start_date, "$lte": end_date}}
+        start_str = pd.to_datetime(start_date).isoformat()
+        end_str = pd.to_datetime(end_date).isoformat()
+        query = {"payload.timestamp": {"$gte": start_str, "$lte": end_str}}
 
     data = list(collection.find(query).sort("payload.timestamp", -1).limit(1000))
     df = pd.DataFrame(data)
@@ -100,7 +102,6 @@ def update_graph(n, start_date, end_date):
     fig.add_trace(go.Scatter(x=df["timestamp"], y=df["energy_consumption_kWh"], mode="lines", name="Energy (kWh)", line=dict(color="blue")))
     fig.add_trace(go.Scatter(x=df["timestamp"], y=df["voltage"], mode="lines", name="Voltage", line=dict(color="red")))
 
-    # Highlight anomalies
     anomalies = df[df["anomaly"]]
     fig.add_trace(go.Scatter(x=anomalies["timestamp"], y=anomalies["energy_consumption_kWh"], mode="markers", name="Anomalies", marker=dict(color="orange", size=10)))
 
@@ -161,5 +162,8 @@ def download_pdf(n_clicks):
     buffer.seek(0)
     return dcc.send_bytes(buffer.getvalue(), "energy_report.pdf")
 
-# ✅ For Railway/Render deployment, Gunicorn will use this
+# ✅ Gunicorn server requirement for deployment
 server = app.server
+
+if __name__ == "__main__":
+    app.run(debug=False, port=8025, host="0.0.0.0")
