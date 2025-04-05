@@ -8,7 +8,6 @@ import pandas as pd
 import datetime
 import plotly.graph_objects as go
 import io
-import openai
 from pymongo import MongoClient
 import google.generativeai as genai
 from reportlab.lib.pagesizes import letter
@@ -16,6 +15,7 @@ from reportlab.pdfgen import canvas
 
 # ✅ Initialize Gemini AI
 genai.configure(api_key="AIzaSyDJBErHnC-7WPAqXfBdr8cjebynAMm08SA")
+model = genai.GenerativeModel('gemini-pro')
 
 # ✅ MongoDB Atlas Connection
 client = MongoClient("mongodb+srv://Scholar:Scholar101!@cluster0.rub78kd.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
@@ -137,49 +137,15 @@ def update_graph(n, start_date, end_date):
 def get_ai_response(n_clicks, user_input):
     if not user_input:
         return "⚠️ Please enter a question!"
-
+    
     try:
-        response = genai.generate_content(user_input)
+        response = model.generate_content(user_input)
         return f"💡 AI Suggestion: {response.text}"
     except Exception as e:
         return f"❌ Error: {str(e)}"
-
-# ✅ Callback for CSV download
-@app.callback(
-    Output("download-dataframe-csv", "data"),
-    Input("btn_csv", "n_clicks"),
-    prevent_initial_call=True
-)
-def download_csv(n_clicks):
-    df = fetch_data()
-    if df.empty:
-        return dash.no_update
-    return dcc.send_data_frame(df.to_csv, "energy_data.csv")
-
-# ✅ Callback for PDF download
-@app.callback(
-    Output("download-dataframe-pdf", "data"),
-    Input("btn_pdf", "n_clicks"),
-    prevent_initial_call=True
-)
-def download_pdf(n_clicks):
-    df = fetch_data()
-    if df.empty:
-        return dash.no_update
-    buffer = io.BytesIO()
-    pdf = canvas.Canvas(buffer, pagesize=letter)
-    pdf.drawString(100, 750, "Smart Energy Consumption Report")
-    pdf.drawString(100, 730, f"Total Energy: {df['energy_consumption_kWh'].sum():.2f} kWh")
-    pdf.drawString(100, 710, f"Peak Usage: {df['timestamp'][df['energy_consumption_kWh'].idxmax()]}")
-    pdf.drawString(100, 690, f"Estimated Cost: Rs{df['cost'].sum():.2f}")
-    pdf.showPage()
-    pdf.save()
-    buffer.seek(0)
-    return dcc.send_bytes(buffer.getvalue(), "energy_report.pdf")
 
 # ✅ Gunicorn server requirement for deployment
 server = app.server
 
 if __name__ == "__main__":
     app.run(debug=False, port=8025, host="0.0.0.0")
-
