@@ -8,13 +8,14 @@ import pandas as pd
 import datetime
 import plotly.graph_objects as go
 import io
+import base64
 import google.generativeai as genai
 from pymongo import MongoClient
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
 # ========== Gemini AI Configuration ==========
-GOOGLE_API_KEY = "AIzaSyCL67tXc9wo6I2dvLCHZsKTms5VEKLuKEM"  # Replace with your actual new key
+GOOGLE_API_KEY = "AIzaSyCL67tXc9wo6I2dvLCHZsKTms5VEKLuKEM"  # Replace with your actual key
 
 try:
     genai.configure(
@@ -77,24 +78,23 @@ app.layout = dbc.Container([
         dbc.Col(html.Button("Download PDF", id="btn_pdf", className="btn btn-danger"), width=3)
     ], className="mb-4"),
     
-    # Summary Panel
-    dbc.Row([dbc.Col(html.Div(id="summary-panel", className="alert alert-info"), width=12)], className="mb-4"),
+    # Summary Panel (Maintaining original structure)
+    dbc.Row([
+        dbc.Col(html.Div(id="summary-panel", className="alert alert-info"), width=12)
+    ], className="mb-4"),
     
     # Main Energy Graph
-    dbc.Row([dbc.Col(dcc.Graph(id="energy-graph"), width=12)], className="mb-4"),
+    dbc.Row([
+        dbc.Col(dcc.Graph(id="energy-graph"), width=12)
+    ], className="mb-4"),
     
     # Energy AI Assistant
     dbc.Row([
         dbc.Col([
-            html.H4("🤖 Energy AI Assistant", className="mb-3"),
-            dcc.Textarea(
-                id="user-question",
-                placeholder="Ask about energy patterns, anomalies, or conservation tips...",
-                style={'width': '100%', 'height': 100},
-                className="mb-2"
-            ),
-            dbc.Button("Analyze with AI", id="ask-ai-btn", color="success", className="mb-3"),
-            html.Div(id="ai-response", className="mt-3")
+            html.H4("🤖 Ask Energy AI"),
+            dcc.Input(id="user-question", type="text", placeholder="Ask about energy usage...", className="form-control"),
+            html.Button("Get Answer", id="ask-ai-btn", className="btn btn-success mt-2"),
+            html.Div(id="ai-response", className="alert alert-warning mt-2")
         ], width=12)
     ], className="mb-4"),
     
@@ -114,7 +114,7 @@ def update_graph(n, start_date, end_date):
     df = fetch_data(start_date, end_date)
     
     if df.empty:
-        return go.Figure(), "No data available for the selected time range"
+        return go.Figure(), "No Data Available"
     
     fig = go.Figure()
     fig.add_trace(go.Scatter(
@@ -129,7 +129,7 @@ def update_graph(n, start_date, end_date):
         y=df["voltage"], 
         mode="lines", 
         name="Voltage", 
-        line=dict(color="red", dash="dot")
+        line=dict(color="red")
     ))
     
     anomalies = df[df["anomaly"]]
@@ -138,27 +138,72 @@ def update_graph(n, start_date, end_date):
         y=anomalies["energy_consumption_kWh"], 
         mode="markers", 
         name="Anomalies", 
-        marker=dict(color="orange", size=10, symbol="x")
+        marker=dict(color="orange", size=10)
     ))
     
     fig.update_layout(
         title="Energy Consumption Over Time",
         xaxis_title="Time",
         yaxis_title="Value",
-        template="plotly_dark",
-        hovermode="x unified"
+        template="plotly_dark"
     )
     
-    summary_text = [
-        html.H5("📊 Energy Summary", className="alert-heading"),
-        html.P(f"🔸 Total Consumption: {df['energy_consumption_kWh'].sum():.2f} kWh"),
-        html.P(f"🔸 Estimated Cost: Rs{df['cost'].sum():.2f}"),
-        html.P(f"🔸 Voltage Range: {df['voltage'].min():.2f}V - {df['voltage'].max():.2f}V"),
-        html.P(f"🔸 Anomalies Detected: {len(anomalies)}"),
-    ]
+    # Maintaining original summary structure exactly
+    summary_text = f"""
+    🔹 Total Energy: {df['energy_consumption_kWh'].sum():.2f} kWh  
+    🔹 Peak Usage: {df['timestamp'][df['energy_consumption_kWh'].idxmax()]}  
+    🔹 Estimated Cost: Rs{df['cost'].sum():.2f}  
+    🔹 Voltage Range: {df['voltage'].min():.2f}V - {df['voltage'].max():.2f}V  
+    """
     
-    return fig, dbc.Alert(summary_text, color="info")
+    return fig, summary_text
 
+# Fixed Download CSV callback
+@app.callback(
+    Output("download-dataframe-csv", "data"),
+    Input("btn_csv", "n_clicks"),
+    State("date-picker-range", "start_date"),
+    State("date-picker-range", "end_date"),
+    prevent_initial_call=True
+)
+def download_csv(n_clicks, start_date, end_date):
+    df = fetch_data(start_date, end_date)
+    if df.empty:
+        return None
+    return dcc.send_data_frame(df.to_csv, "energy_data.csv")
+
+# Fixed Download PDF callback
+@app.callback(
+    Output("download-dataframe-pdf", "data"),
+    Input("btn_pdf", "n_clicks"),
+    State("date-picker-range", "start_date"),
+    State("date-picker-range", "end_date"),
+    prevent_initial_call=True
+)
+def download_pdf(n_clicks, start_date, end_date):
+    df = fetch_data(start_date, end_date)
+    if df.empty:
+        return None
+    
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=letter)
+    
+    # Add title
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(100, 750, "Energy Consumption Report")
+    
+    # Add summary
+    c.setFont("Helvetica", 12)
+    c.drawString(100, 700, f"Date Range: {start_date} to {end_date}")
+    c.drawString(100, 680, f"Total Energy: {df['energy_consumption_kWh'].sum():.2f} kWh")
+    c.drawString(100, 660, f"Estimated Cost: Rs{df['cost'].sum():.2f}")
+    
+    # Save and return
+    c.save()
+    buffer.seek(0)
+    return dcc.send_bytes(buffer.getvalue(), "energy_report.pdf")
+
+# Fixed AI Response callback
 @app.callback(
     Output("ai-response", "children"),
     Input("ask-ai-btn", "n_clicks"),
@@ -167,47 +212,20 @@ def update_graph(n, start_date, end_date):
 )
 def get_ai_response(n_clicks, user_input):
     if not user_input:
-        return dbc.Alert("Please enter a question about your energy data", color="warning")
+        return "⚠️ Please enter a question!"
     
     if not model:
-        return dbc.Alert("AI service is currently unavailable", color="danger")
+        return "❌ AI service is currently unavailable"
     
     try:
-        # Enhanced prompt with data context
-        prompt = f"""You are an expert energy analyst. Analyze this query about electricity data:
-
-        Data Context:
-        - Metrics: kWh consumption and voltage readings
-        - Time range: Last 7 days (default)
-        - Anomalies: Detected at >2 standard deviations
-        - Cost calculation: Rs 0.12 per kWh
-
-        User Question: {user_input}
-
-        Provide your response with:
-        1. Technical analysis of patterns
-        2. Explanation of anomalies
-        3. Energy conservation tips
-        4. Cost-saving recommendations
-        
-        Format your response in clear markdown with bullet points."""
-        
-        response = model.generate_content(prompt)
-        
-        if not response.text:
-            return dbc.Alert("The AI response was empty. Please try again.", color="warning")
-        
-        return dbc.Card([
-            dbc.CardHeader("🔍 Energy AI Analysis"),
-            dbc.CardBody(dcc.Markdown(response.text))
-        ], className="mt-3")
-        
+        response = model.generate_content(
+            f"You are an energy consumption assistant. Analyze this energy data query: {user_input}\n"
+            "Provide specific recommendations based on kWh consumption, voltage readings, and detected anomalies.\n"
+            "Format your response with bullet points for clarity."
+        )
+        return f"💡 AI Suggestion: {response.text}"
     except Exception as e:
-        return dbc.Alert([
-            html.H5("⚠️ AI Service Error"),
-            html.P(str(e)),
-            html.P("Please try again later or rephrase your question")
-        ], color="danger")
+        return f"❌ Error: {str(e)}"
 
 # ========== Run the App ==========
 if __name__ == "__main__":
